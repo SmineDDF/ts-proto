@@ -395,3 +395,19 @@ Where (\*) indicates they might throw an error at runtime.
 - Optional primitives: use wrapper types, i.e. `StringValue name = 1`.
 - Required messages: not available
 - Optional primitives: use as-is, i.e. `SubMessage message = 1`.
+
+# Зачем нужен этот форк:
+- поддержать кастомный параметр json_omit_prefix для enum
+- прописывать значения enum'ов строкой, а не числом
+
+При этом нет гарантий, что что-то кроме записи самих типов (методы encode/decode/toJSON/fromJSON) осталось в рабочем состоянии. Изменения касались только генерации типов и вполне могли поломать генерацию других вещей. В случае, если этот функционал будет нужен, советую использовать (оригинальную библиотеку)[https://github.com/stephenh/ts-proto] и внести туда правки самостоятельно.
+
+Запуск генератора с рабочим конфигом:
+```
+protoc
+  --proto_path=<proto_root_path> // путь до корня протобаф-пакета
+  --plugin=<path_to_node_modules>/node_modules/.bin/protoc-gen-ts_proto
+  --ts_proto_opt=outputJsonMethods=false,outputEncodeMethods=false,outputClientImpl=false,useOptionals=true,protoPath=<proto_root_path> // путь до корня протобаф-пакета дублируется потому что оригинальный параметр не попадает в скоуп плагина
+  --ts_proto_out=<output_path> // путь до папки, в которую запишутся сгенерированные 
+  <file_path(s)> // путь до .proto файл(а\ов), которые нужно парсить
+```

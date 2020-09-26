@@ -1,4 +1,5 @@
 import { promisify } from 'util';
+import { loadSync } from 'protobufjs';
 import { optionsFromParameter, readToBuffer } from './utils';
 import { google } from '../build/pbjs';
 import { generateFile } from './main';
@@ -6,7 +7,14 @@ import { createTypeMap } from './types';
 import CodeGeneratorRequest = google.protobuf.compiler.CodeGeneratorRequest;
 import CodeGeneratorResponse = google.protobuf.compiler.CodeGeneratorResponse;
 import Feature = google.protobuf.compiler.CodeGeneratorResponse.Feature;
-import { FileSpec } from 'ts-poet';
+
+const getProtoPath = (relativePath = '.', name: string) => (process.cwd() + '/' + relativePath + '/' + name);
+const getParamsFromString = (params: string): Record<string, string> => params.split(',').reduce((acc, param) => {
+  const [key, value] = param.split('=');
+  acc[key] = value;
+
+  return acc;
+}, {}) 
 
 // this would be the plugin called by the protoc compiler
 async function main() {
@@ -15,11 +23,19 @@ async function main() {
   // const request = CodeGeneratorRequest.fromObject(json);
   const request = CodeGeneratorRequest.decode(stdin);
   const typeMap = createTypeMap(request, optionsFromParameter(request.parameter));
+  const { protoPath } = getParamsFromString(request.parameter);
   const files = request.protoFile.map((file) => {
-    const spec = generateFile(typeMap, file, request.parameter);
+    let parsed;
+
+    try {
+      // @ts-expect-error
+      parsed = loadSync(getProtoPath(protoPath, file.name))?.nested?.[file.package]?.nested;
+    } catch (e) {}
+
+    const spec = generateFile(typeMap, file, request.parameter, parsed);
     return new CodeGeneratorResponse.File({
       name: spec.path,
-      content: prefixDisableLinter(spec),
+      content: spec.toString()
     });
   });
   const response = new CodeGeneratorResponse({ file: files, supportedFeatures: Feature.FEATURE_PROTO3_OPTIONAL });
@@ -39,11 +55,3 @@ main()
     process.stderr.write(e.stack);
     process.exit(1);
   });
-
-// Comment block at the top of every source file, since these comments require specific
-// syntax incompatible with ts-poet, we will hard-code the string and prepend to the
-// generator output.
-function prefixDisableLinter(spec: FileSpec): string {
-  return `/* eslint-disable */
-${spec}`;
-}

@@ -85,7 +85,7 @@ export type Options = {
   env: EnvOption;
 };
 
-export function generateFile(typeMap: TypeMap, fileDesc: FileDescriptorProto, parameter: string): FileSpec {
+export function generateFile(typeMap: TypeMap, fileDesc: FileDescriptorProto, parameter: string, parsed: object): FileSpec {
   const options = optionsFromParameter(parameter);
 
   // Google's protofiles are organized like Java, where package == the folder the file
@@ -117,7 +117,7 @@ export function generateFile(typeMap: TypeMap, fileDesc: FileDescriptorProto, pa
     },
     options,
     (fullName, enumDesc, sInfo) => {
-      file = file.addCode(generateEnum(options, fullName, enumDesc, sInfo));
+      file = file.addCode(generateEnum(options, fullName, enumDesc, sInfo, parsed));
     }
   );
 
@@ -396,17 +396,20 @@ function generateEnum(
   options: Options,
   fullName: string,
   enumDesc: EnumDescriptorProto,
-  sourceInfo: SourceInfo
+  sourceInfo: SourceInfo,
+  parsed: object
 ): CodeBlock {
   let code = CodeBlock.empty();
 
   // Output the `enum { Foo, A = 0, B = 1 }`
   maybeAddComment(sourceInfo, (text) => (code = code.add(`/** %L */\n`, text)));
+  const enumPrefix = parsed?.[fullName]?.options?.['(json_omit_prefix)'] || '';
   code = code.beginControlFlow('export enum %L', fullName);
   enumDesc.value.forEach((valueDesc, index) => {
+    const stringEnum = valueDesc.name.startsWith(enumPrefix) ? valueDesc.name.substring(enumPrefix.length) : valueDesc.name;
     const info = sourceInfo.lookup(Fields.enum.value, index);
     maybeAddComment(info, (text) => (code = code.add(`/** ${valueDesc.name} - ${text} */\n`)));
-    code = code.add('%L = %L,\n', valueDesc.name, valueDesc.number.toString());
+    code = code.add('%L = %L,\n', stringEnum, `'${stringEnum}'`);
   });
   code = code.add('%L = %L,\n', UNRECOGNIZED_ENUM_NAME, UNRECOGNIZED_ENUM_VALUE.toString());
   code = code.endControlFlow();
