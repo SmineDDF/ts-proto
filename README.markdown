@@ -404,12 +404,17 @@ Where (\*) indicates they might throw an error at runtime.
 
 Запуск генератора с рабочим конфигом:
 <pre>
-```
-<b>protoc</b>
-  <b>--proto_path={{<i>proto_root_path</i>}}</b> // путь до корня протобаф-пакета
-  <b>--plugin={{<i>path_to_node_modules</i>}}/node_modules/.bin/protoc-gen-ts_proto</b> // путь до плагина-бинарника этого пакета
-  <b>--ts_proto_opt=outputJsonMethods=false,outputEncodeMethods=false,outputClientImpl=false,useOptionals=true,protoPath={{<i>proto_root_path</i>}}</b> // путь до корня протобаф-пакета дублируется потому что оригинальный параметр не попадает в скоуп плагина
-  <b>--ts_proto_out={{<i>output_path</i>}}</b> // путь до папки, в которую запишутся сгенерированные типы
-  <b>{{<i>file_path(s)</i>}}</b> // путь до .proto файл(а\ов), которые нужно парсить
-```
+protoc
+  --proto_path={{<b>proto_root_path</b>}}
+  --plugin={{<b>path_to_node_modules</b>}}/node_modules/.bin/protoc-gen-ts_proto
+  --ts_proto_opt=outputJsonMethods=false,outputEncodeMethods=false,outputClientImpl=false,useOptionals=true,protoPath={{<b>proto_root_path</b>}}
+  --ts_proto_out={{<b>output_path</b>}}
+  {{<b>file_path(s)</b>}}
 </pre>
+
+Где 
+- `proto_path` - корень протобаф-пакета, от которого отталкиваются импорты в .proto-файлах
+- `plugin` - путь до плагина-бинарника этого модуля
+- `ts_proto_opt` - опции для плагина, параметр protoPath дублируется из-за того, что оригинальный не попадает в скоуп плагина
+- `ts_proto_out` - куда записывать сгенерированные типы
+- `file_path(s)` - путь до .proto-файлов, на основе которых генерируются типы (для рекурсивного выбора всех файлов в директории и поддиректориях можно использовать `./example/**/*.proto`
