@@ -403,11 +403,13 @@ Where (\*) indicates they might throw an error at runtime.
 При этом нет гарантий, что что-то кроме записи самих типов (методы encode/decode/toJSON/fromJSON) осталось в рабочем состоянии. Изменения касались только генерации типов и вполне могли поломать генерацию других вещей. В случае, если этот функционал будет нужен, советую использовать (оригинальную библиотеку)[https://github.com/stephenh/ts-proto] и внести туда правки самостоятельно.
 
 Запуск генератора с рабочим конфигом:
+<pre>
 ```
-protoc
-  --proto_path=<proto_root_path> // путь до корня протобаф-пакета
-  --plugin=<path_to_node_modules>/node_modules/.bin/protoc-gen-ts_proto
-  --ts_proto_opt=outputJsonMethods=false,outputEncodeMethods=false,outputClientImpl=false,useOptionals=true,protoPath=<proto_root_path> // путь до корня протобаф-пакета дублируется потому что оригинальный параметр не попадает в скоуп плагина
-  --ts_proto_out=<output_path> // путь до папки, в которую запишутся сгенерированные 
-  <file_path(s)> // путь до .proto файл(а\ов), которые нужно парсить
+<b>protoc</b>
+  <b>--proto_path={{<i>proto_root_path</i>}}</b> // путь до корня протобаф-пакета
+  <b>--plugin={{<i>path_to_node_modules</i>}}/node_modules/.bin/protoc-gen-ts_proto</b> // путь до плагина-бинарника этого пакета
+  <b>--ts_proto_opt=outputJsonMethods=false,outputEncodeMethods=false,outputClientImpl=false,useOptionals=true,protoPath={{<i>proto_root_path</i>}}</b> // путь до корня протобаф-пакета дублируется потому что оригинальный параметр не попадает в скоуп плагина
+  <b>--ts_proto_out={{<i>output_path</i>}}</b> // путь до папки, в которую запишутся сгенерированные типы
+  <b>{{<i>file_path(s)</i>}}</b> // путь до .proto файл(а\ов), которые нужно парсить
 ```
+</pre>
