@@ -37,6 +37,7 @@ export function upperFirst(name: string): string {
 
 export function defaultOptions(): Options {
   return {
+    useStringEnums: false,
     useContext: false,
     snakeToCamel: true,
     forceLong: LongOption.NUMBER,
@@ -58,6 +59,9 @@ export function optionsFromParameter(parameter: string): Options {
   const options = defaultOptions();
 
   if (parameter) {
+    if (parameter.includes('useStringEnums=true')) {
+      options.useStringEnums = true;
+    }
     if (parameter.includes('context=true')) {
       options.useContext = true;
     }

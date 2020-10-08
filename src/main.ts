@@ -69,6 +69,7 @@ export enum OneofOption {
 }
 
 export type Options = {
+  useStringEnums: boolean;
   useContext: boolean;
   snakeToCamel: boolean;
   forceLong: LongOption;
@@ -85,7 +86,7 @@ export type Options = {
   env: EnvOption;
 };
 
-export function generateFile(typeMap: TypeMap, fileDesc: FileDescriptorProto, parameter: string, parsed: object): FileSpec {
+export function generateFile(typeMap: TypeMap, fileDesc: FileDescriptorProto, parameter: string, parsed?: object): FileSpec {
   const options = optionsFromParameter(parameter);
 
   // Google's protofiles are organized like Java, where package == the folder the file
@@ -397,7 +398,7 @@ function generateEnum(
   fullName: string,
   enumDesc: EnumDescriptorProto,
   sourceInfo: SourceInfo,
-  parsed: object
+  parsed?: object
 ): CodeBlock {
   let code = CodeBlock.empty();
 
@@ -405,12 +406,20 @@ function generateEnum(
   maybeAddComment(sourceInfo, (text) => (code = code.add(`/** %L */\n`, text)));
   const enumPrefix = parsed?.[fullName]?.options?.['(json_omit_prefix)'] || '';
   code = code.beginControlFlow('export enum %L', fullName);
-  enumDesc.value.forEach((valueDesc, index) => {
-    const stringEnum = valueDesc.name.startsWith(enumPrefix) ? valueDesc.name.substring(enumPrefix.length) : valueDesc.name;
-    const info = sourceInfo.lookup(Fields.enum.value, index);
-    maybeAddComment(info, (text) => (code = code.add(`/** ${valueDesc.name} - ${text} */\n`)));
-    code = code.add('%L = %L,\n', stringEnum, `'${stringEnum}'`);
-  });
+  if (options.useStringEnums) {
+    enumDesc.value.forEach((valueDesc, index) => {
+      const stringEnum = valueDesc.name.startsWith(enumPrefix) ? valueDesc.name.substring(enumPrefix.length) : valueDesc.name;
+      const info = sourceInfo.lookup(Fields.enum.value, index);
+      maybeAddComment(info, (text) => (code = code.add(`/** ${valueDesc.name} - ${text} */\n`)));
+      code = code.add('%L = %L,\n', stringEnum, `'${stringEnum}'`);
+    });
+  } else {
+    enumDesc.value.forEach((valueDesc, index) => {
+      const info = sourceInfo.lookup(Fields.enum.value, index);
+      maybeAddComment(info, (text) => (code = code.add(`/** ${valueDesc.name} - ${text} */\n`)));
+      code = code.add('%L = %L,\n', valueDesc.name, valueDesc.number.toString());
+    });
+  }
   code = code.add('%L = %L,\n', UNRECOGNIZED_ENUM_NAME, UNRECOGNIZED_ENUM_VALUE.toString());
   code = code.endControlFlow();
 
