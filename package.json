@@ -1,6 +1,6 @@
 {
   "name": "@sminerino/ts-proto",
-  "version": "1.35.2",
+  "version": "1.35.3",
   "description": "",
   "main": "build/plugin.js",
   "repository": "github:smineddf/ts-proto",
