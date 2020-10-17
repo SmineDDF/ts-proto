@@ -8,13 +8,37 @@ import CodeGeneratorRequest = google.protobuf.compiler.CodeGeneratorRequest;
 import CodeGeneratorResponse = google.protobuf.compiler.CodeGeneratorResponse;
 import Feature = google.protobuf.compiler.CodeGeneratorResponse.Feature;
 
-const getProtoPath = (relativePath = '.', name: string) => (process.cwd() + '/' + relativePath + '/' + name);
+const getProtoPath = (path = '.', name: string) => {
+  const isPathAbsolute = path.startsWith('/');
+  
+  if (isPathAbsolute) {
+    return path + '/' + name;
+  }
+
+  return process.cwd() + '/' + path + '/' + name;
+}
 const getParamsFromString = (params: string): Record<string, string> => params.split(',').reduce((acc, param) => {
   const [key, value] = param.split('=');
   acc[key] = value;
 
   return acc;
-}, {}) 
+}, {})
+const resolveNestedPackage = (packageName: string, parsedFile: object) => {
+  const paths = packageName.split('.');
+
+  // @ts-expect-error
+  let current = parsedFile?.nested;
+
+  paths.forEach(path => {
+    if (!current) {
+      return;
+    }
+
+    current = current[path]?.nested;
+  })
+
+  return current;
+}
 
 // this would be the plugin called by the protoc compiler
 async function main() {
@@ -28,8 +52,8 @@ async function main() {
     let parsed;
 
     try {
-      // @ts-expect-error
-      parsed = loadSync(getProtoPath(protoPath, file.name))?.nested?.[file.package]?.nested;
+      const loaded = loadSync(getProtoPath(protoPath, file.name));
+      parsed = resolveNestedPackage(file.package, loaded);
     } catch (e) {}
 
     const spec = generateFile(typeMap, file, request.parameter, parsed);
