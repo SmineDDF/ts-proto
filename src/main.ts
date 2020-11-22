@@ -70,7 +70,6 @@ export enum OneofOption {
 }
 
 export type Options = {
-  useStringEnums: boolean;
   useContext: boolean;
   snakeToCamel: boolean;
   forceLong: LongOption;

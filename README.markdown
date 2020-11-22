@@ -417,7 +417,7 @@ Where (\*) indicates they might throw an error at runtime.
 protoc
   --proto_path={{<b>proto_root_path</b>}}
   --plugin={{<b>path_to_node_modules</b>}}/node_modules/.bin/protoc-gen-ts_proto
-  --ts_proto_opt=useStringEnums=true,outputJsonMethods=false,outputEncodeMethods=false,outputClientImpl=false,useOptionals=true,protoPath={{<b>proto_root_path</b>}}
+  --ts_proto_opt=stringEnums=true,outputJsonMethods=false,outputEncodeMethods=false,outputClientImpl=false,useOptionals=true,protoPath={{<b>proto_root_path</b>}}
   --ts_proto_out={{<b>output_path</b>}}
   {{<b>file_path(s)</b>}}
 </pre>
