@@ -40,6 +40,8 @@ const basePleaseChoose_Submessage: object = {
   name: "",
 };
 
+export const protobufPackage = 'oneof'
+
 export enum PleaseChoose_StateEnum {
   UNKNOWN = 0,
   ON = 2,
@@ -364,7 +366,7 @@ function base64FromBytes(arr: Uint8Array): string {
   return btoa(bin.join(''));
 }
 type Builtin = Date | Function | Uint8Array | string | number | undefined;
-type DeepPartial<T> = T extends Builtin
+export type DeepPartial<T> = T extends Builtin
   ? T
   : T extends Array<infer U>
   ? Array<DeepPartial<U>>

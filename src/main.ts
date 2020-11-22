@@ -10,6 +10,7 @@ import {
   isBytes,
   isEnum,
   isLong,
+  isLongValueType,
   isMapType,
   isMessage,
   isPrimitive,
@@ -24,7 +25,6 @@ import {
   TypeMap,
   valueTypeName,
 } from './types';
-import { asSequence } from 'sequency';
 import SourceInfo, { Fields } from './sourceInfo';
 import { maybeAddComment, optionsFromParameter } from './utils';
 import { camelCase, camelToSnake, capitalize, maybeSnakeToCamel } from './case';
@@ -35,6 +35,7 @@ import {
 } from './generate-nestjs';
 import {
   generateDataLoadersType,
+  generateDataLoaderOptionsType,
   generateRpcType,
   generateService,
   generateServiceClientImpl,
@@ -74,9 +75,11 @@ export type Options = {
   snakeToCamel: boolean;
   forceLong: LongOption;
   useOptionals: boolean;
+  useDate: boolean;
   oneof: OneofOption;
   outputEncodeMethods: boolean;
   outputJsonMethods: boolean;
+  stringEnums: boolean;
   outputClientImpl: boolean | 'grpc-web';
   addGrpcMetadata: boolean;
   addNestjsRestParameter: boolean;
@@ -84,6 +87,7 @@ export type Options = {
   lowerCaseServiceMethods: boolean;
   nestJs: boolean;
   env: EnvOption;
+  addUnrecognizedEnum: boolean;
 };
 
 export function generateFile(typeMap: TypeMap, fileDesc: FileDescriptorProto, parameter: string, parsed?: object): FileSpec {
@@ -102,6 +106,9 @@ export function generateFile(typeMap: TypeMap, fileDesc: FileDescriptorProto, pa
   // the package already implicitly in it, so we won't re-append/strip/etc. it out/back in.
   const moduleName = fileDesc.name.replace('.proto', '.ts');
   let file = FileSpec.create(moduleName);
+
+  // Indicate this file's source protobuf package for reflective use with google.protobuf.Any
+  file = file.addCode(CodeBlock.empty().add(`export const protobufPackage = '%L'\n`, fileDesc.package));
 
   const sourceInfo = SourceInfo.fromDescriptor(fileDesc);
 
@@ -205,6 +212,7 @@ export function generateFile(typeMap: TypeMap, fileDesc: FileDescriptorProto, pa
   }
 
   if (options.useContext) {
+    file = file.addInterface(generateDataLoaderOptionsType());
     file = file.addInterface(generateDataLoadersType());
   }
 
@@ -213,7 +221,7 @@ export function generateFile(typeMap: TypeMap, fileDesc: FileDescriptorProto, pa
     fileDesc,
     sourceInfo,
     (_, messageType) => {
-      hasAnyTimestamps = hasAnyTimestamps || asSequence(messageType.field).any(isTimestamp);
+      hasAnyTimestamps = hasAnyTimestamps || messageType.field.some(isTimestamp);
     },
     options
   );
@@ -322,7 +330,7 @@ function addDeepPartialType(file: FileSpec, options: Options): FileSpec {
   // Based on the type from ts-essentials
   return file.addCode(
     CodeBlock.empty().add(`type Builtin = Date | Function | Uint8Array | string | number | undefined;
-type DeepPartial<T> = T extends Builtin
+export type DeepPartial<T> = T extends Builtin
   ? T
   : T extends Array<infer U>
   ? Array<DeepPartial<U>>
@@ -406,26 +414,38 @@ function generateEnum(
   maybeAddComment(sourceInfo, (text) => (code = code.add(`/** %L */\n`, text)));
   const enumPrefix = parsed?.[fullName]?.options?.['(json_omit_prefix)'] || '';
   code = code.beginControlFlow('export enum %L', fullName);
-  if (options.useStringEnums) {
-    enumDesc.value.forEach((valueDesc, index) => {
+
+  enumDesc.value.forEach((valueDesc, index) => {
+    const info = sourceInfo.lookup(Fields.enum.value, index);
+    maybeAddComment(info, (text) => (code = code.add(`/** ${valueDesc.name} - ${text} */\n`)));
+
+    if (options.stringEnums) {
       const stringEnum = valueDesc.name.startsWith(enumPrefix) ? valueDesc.name.substring(enumPrefix.length) : valueDesc.name;
-      const info = sourceInfo.lookup(Fields.enum.value, index);
-      maybeAddComment(info, (text) => (code = code.add(`/** ${valueDesc.name} - ${text} */\n`)));
-      code = code.add('%L = %L,\n', stringEnum, `'${stringEnum}'`);
-    });
-  } else {
-    enumDesc.value.forEach((valueDesc, index) => {
-      const info = sourceInfo.lookup(Fields.enum.value, index);
-      maybeAddComment(info, (text) => (code = code.add(`/** ${valueDesc.name} - ${text} */\n`)));
-      code = code.add('%L = %L,\n', valueDesc.name, valueDesc.number.toString());
-    });
-  }
-  code = code.add('%L = %L,\n', UNRECOGNIZED_ENUM_NAME, UNRECOGNIZED_ENUM_VALUE.toString());
+
+      code = code.add(
+        '%L = %L,\n',
+        valueDesc.name,
+        `"${stringEnum}"`
+      );
+    } else {
+      code = code.add(
+        '%L = %L,\n',
+        valueDesc.name,
+        valueDesc.number.toString()
+      );
+    }
+  });
+  if (options.addUnrecognizedEnum)
+    code = code.add(
+      '%L = %L,\n',
+      UNRECOGNIZED_ENUM_NAME,
+      options.stringEnums ? `"${UNRECOGNIZED_ENUM_NAME}"` : UNRECOGNIZED_ENUM_VALUE.toString()
+    );
   code = code.endControlFlow();
 
   if (options.outputJsonMethods) {
     code = code.add('\n');
-    code = code.addFunction(generateEnumFromJson(fullName, enumDesc));
+    code = code.addFunction(generateEnumFromJson(fullName, enumDesc, options));
     code = code.add('\n');
     code = code.addFunction(generateEnumToJson(fullName, enumDesc));
   }
@@ -434,7 +454,7 @@ function generateEnum(
 }
 
 /** Generates a function with a big switch statement to decode JSON -> our enum. */
-function generateEnumFromJson(fullName: string, enumDesc: EnumDescriptorProto): FunctionSpec {
+function generateEnumFromJson(fullName: string, enumDesc: EnumDescriptorProto, options: Options): FunctionSpec {
   let func = FunctionSpec.create(`${camelCase(fullName)}FromJSON`)
     .addModifiers(Modifier.EXPORT)
     .addParameter('object', 'any')
@@ -446,12 +466,23 @@ function generateEnumFromJson(fullName: string, enumDesc: EnumDescriptorProto): 
       .add('case %S:%>\n', valueDesc.name)
       .addStatement('return %L.%L%<', fullName, valueDesc.name);
   }
-  body = body
-    .add('case %L:\n', UNRECOGNIZED_ENUM_VALUE)
-    .add('case %S:\n', UNRECOGNIZED_ENUM_NAME)
-    .add('default:%>\n')
-    .addStatement('return %L.%L%<', fullName, UNRECOGNIZED_ENUM_NAME)
-    .endControlFlow();
+  if (options.addUnrecognizedEnum) {
+    body = body
+      .add('case %L:\n', UNRECOGNIZED_ENUM_VALUE)
+      .add('case %S:\n', UNRECOGNIZED_ENUM_NAME)
+      .add('default:%>\n')
+      .addStatement('return %L.%L%<', fullName, UNRECOGNIZED_ENUM_NAME);
+  } else {
+    body = body
+      .add('default:%>\n')
+      // We use globalThis to avoid conflicts on protobuf types named `Error`.
+      .addStatement(
+        'throw new globalThis.Error("Unrecognized enum value " + %L + " for enum %L")%<',
+        'object',
+        fullName
+      );
+  }
+  body = body.endControlFlow();
   return func.addCodeBlock(body);
 }
 
@@ -563,8 +594,8 @@ function generateBaseInstance(typeMap: TypeMap, fullName: string, messageDesc: D
   // Create a 'base' instance with default values for decode to use as a prototype
   let baseMessage = PropertySpec.create('base' + fullName, TypeNames.anyType('object')).addModifiers(Modifier.CONST);
   let initialValue = CodeBlock.empty().beginHash();
-  asSequence(messageDesc.field)
-    .filterNot(isWithinOneOf)
+  messageDesc.field
+    .filter((field) => !isWithinOneOf(field))
     .forEach((field) => {
       let val = defaultValue(typeMap, field, options);
       if (val === 'undefined' || isBytes(field)) {
@@ -587,6 +618,7 @@ type EnumVisitor = (
   sourceInfo: SourceInfo,
   fullProtoTypeName: string
 ) => void;
+
 export function visit(
   proto: FileDescriptorProto | DescriptorProto,
   sourceInfo: SourceInfo,
@@ -895,7 +927,12 @@ function generateFromJson(
       } else if (isTimestamp(field)) {
         return CodeBlock.of('fromJsonTimestamp(%L)', from);
       } else if (isValueType(field)) {
-        return CodeBlock.of('%L(%L)', capitalize(valueTypeName(field).toString()), from);
+        const valueType = valueTypeName(field.typeName, options)!;
+        if (isLongValueType(field)) {
+          return CodeBlock.of('%L.fromValue(%L)', capitalize(valueType.toString()), from);
+        } else {
+          return CodeBlock.of('%L(%L)', capitalize(valueType.toString()), from);
+        }
       } else if (isMessage(field)) {
         if (isRepeated(field) && isMapType(typeMap, messageDesc, field, options)) {
           const valueType = (typeMap.get(field.typeName)![2] as DescriptorProto).field[1];
@@ -1179,7 +1216,7 @@ function generateFromPartial(
         );
     } else {
       func = func.beginControlFlow('if (object.%L !== undefined && object.%L !== null)', fieldName, fieldName);
-      if (isLong(field) && options.forceLong === LongOption.LONG) {
+      if ((isLong(field) || isLongValueType(field)) && options.forceLong === LongOption.LONG) {
         func = func.addStatement(
           `message.%L = %L as %L`,
           fieldName,
