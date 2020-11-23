@@ -6,6 +6,7 @@ import { ImportsName } from 'ts-poet/build/SymbolSpecs';
 import { CodeBlock, InterfaceSpec, EnumSpec, ClassSpec, FunctionSpec, PropertySpec, TypeAliasSpec, Modifier, FileSpec } from 'ts-poet';
 import { CodeWriter } from 'ts-poet/build/CodeWriter';
 import { StringBuffer } from 'ts-poet/build/StringBuffer';
+import { uniqBy } from 'lodash';
 
 export function readToBuffer(stream: ReadStream): Promise<Buffer> {
   return new Promise((resolve) => {
@@ -172,23 +173,25 @@ export function stringifyFile(fileSpec: FileSpec): string {
   const requiredImports = importsCollector.requiredImports();
   const duplicateBuffer = {};
   const duplicateReverseMap = {};
-  const requiredImportsConflictsResolved = requiredImports.map(({ value, source }) => {
-    if (source.substring(2) === fileSpec.path.replace(/\.tsx?$/, '')) {
+  const requiredImportsConflictsResolved = uniqBy(requiredImports, ({ value, source }) => value + source)
+    .map(({ value, source }) => {
+      if (source.substring(2) === fileSpec.path.replace(/\.tsx?$/, '')) {
+        return { value, source };
+      }
+
+      const bufferValueCounter = duplicateBuffer[value];
+
+      if (bufferValueCounter) {
+        duplicateBuffer[value] = bufferValueCounter + 1;
+        duplicateReverseMap[`${value}_${source}`] = `${value}_autoresolved_${bufferValueCounter}`;
+        return { value: `#$#${value}|_autoresolved_${bufferValueCounter}#$#`, source }
+      }
+
+      duplicateBuffer[value] = 1;
+
       return { value, source };
-    }
-
-    const bufferValueCounter = duplicateBuffer[value];
-
-    if (bufferValueCounter) {
-      duplicateBuffer[value] = bufferValueCounter + 1;
-      duplicateReverseMap[`${value}_${source}`] = `${value}_autoresolved_${bufferValueCounter}`;
-      return { value: `#$#${value}|_autoresolved_${bufferValueCounter}#$#`, source }
-    }
-
-    duplicateBuffer[value] = 1;
-
-    return { value, source };
-  }).map(({ value, source }) => new ImportsName(value, source));
+    })
+    .map(({ value, source }) => new ImportsName(value, source));
 
   const codeWriter = new CodeWriter(out, ' ', new Set(requiredImportsConflictsResolved));
 
