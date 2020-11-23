@@ -205,17 +205,22 @@ export function stringifyFile(fileSpec: FileSpec): string {
     .filter(it => !(it instanceof CodeBlock))
     .forEach(member => {
       (member.propertySpecs || []).forEach(property => {
-        (property.type.typeChoices || []).forEach(choice => {
+        const processType = type => {
           // @ts-ignore-next-line
-          const { imported: { value, source } = {} } = choice || {};
+          const { imported: { value, source } = {} } = type || {};
 
           if (value && source && `${value}_${source}` in duplicateReverseMap) {
             const newValue = duplicateReverseMap[`${value}_${source}`];
-
-            choice.usage = newValue;
-            choice.imported = new ImportsName(newValue, source);
+            type.usage = newValue;
+            type.imported = new ImportsName(newValue, source);
           }
-        })
+        };
+
+        if (! property.type?.typeChoices) {
+          return processType(property.type)
+        }
+
+        (property.type.typeChoices || []).forEach(processType);
       })
     });
 
