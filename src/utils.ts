@@ -1,6 +1,11 @@
 import ReadStream = NodeJS.ReadStream;
 import { Options, LongOption, EnvOption, OneofOption } from './main';
 import { SourceDescription } from './sourceInfo';
+import { filterInstances } from 'ts-poet/build/utils';
+import { ImportsName } from 'ts-poet/build/SymbolSpecs';
+import { CodeBlock, InterfaceSpec, EnumSpec, ClassSpec, FunctionSpec, PropertySpec, TypeAliasSpec, Modifier, FileSpec } from 'ts-poet';
+import { CodeWriter } from 'ts-poet/build/CodeWriter';
+import { StringBuffer } from 'ts-poet/build/StringBuffer';
 
 export function readToBuffer(stream: ReadStream): Promise<Buffer> {
   return new Promise((resolve) => {
@@ -158,3 +163,89 @@ export function maybeAddComment(desc: SourceDescription, process: (comment: stri
     );
   }
 }
+
+export function stringifyFile(fileSpec: FileSpec): string {
+  const out = new StringBuffer();
+  const importsCollector = new CodeWriter(new StringBuffer(), '  ');
+  // @ts-ignore-next-line
+  fileSpec.emitToWriter(importsCollector);
+  const requiredImports = importsCollector.requiredImports();
+  const duplicateBuffer = {};
+  const duplicateReverseMap = {};
+  const requiredImportsConflictsResolved = requiredImports.map(({ value, source }) => {
+    if (source.substring(2) === fileSpec.path.replace(/\.tsx?$/, '')) {
+      return { value, source };
+    }
+
+    const bufferValueCounter = duplicateBuffer[value];
+
+    if (bufferValueCounter) {
+      duplicateBuffer[value] = bufferValueCounter + 1;
+      duplicateReverseMap[`${value}_${source}`] = `${value}_autoresolved_${bufferValueCounter}`;
+      return { value: `#$#${value}|_autoresolved_${bufferValueCounter}#$#`, source }
+    }
+
+    duplicateBuffer[value] = 1;
+
+    return { value, source };
+  }).map(({ value, source }) => new ImportsName(value, source));
+
+  const codeWriter = new CodeWriter(out, ' ', new Set(requiredImportsConflictsResolved));
+
+  if (fileSpec.comment.isNotEmpty()) {
+    codeWriter.emitComment(fileSpec.comment);
+  }
+
+  codeWriter.emitImports(fileSpec.path.replace(/\.tsx?$/, ''));
+
+  fileSpec.members
+    .filter(it => !(it instanceof CodeBlock))
+    .forEach(member => {
+      (member.propertySpecs || []).forEach(property => {
+        (property.type.typeChoices || []).forEach(choice => {
+          // @ts-ignore-next-line
+          const { imported: { value, source } = {} } = choice || {};
+
+          if (value && source && `${value}_${source}` in duplicateReverseMap) {
+            const newValue = duplicateReverseMap[`${value}_${source}`];
+
+            choice.usage = newValue;
+            choice.imported = new ImportsName(newValue, source);
+          }
+        })
+      })
+    });
+
+  fileSpec.members
+    .filter(it => !(it instanceof CodeBlock))
+    .forEach(member => {
+      codeWriter.emit('\n');
+      if (member instanceof InterfaceSpec) {
+        member.emit(codeWriter);
+      } else if (member instanceof ClassSpec) {
+        member.emit(codeWriter);
+      } else if (member instanceof EnumSpec) {
+        member.emit(codeWriter);
+      } else if (member instanceof FunctionSpec) {
+        member.emit(codeWriter, [Modifier.PUBLIC]);
+      } else if (member instanceof PropertySpec) {
+        member.emit(codeWriter, [Modifier.PUBLIC], true);
+      } else if (member instanceof TypeAliasSpec) {
+        member.emit(codeWriter);
+      } else if (member instanceof CodeBlock) {
+        codeWriter.emitCodeBlock(member);
+      } else {
+        throw new Error('unhandled');
+      }
+    });
+
+  filterInstances(fileSpec.members, CodeBlock).forEach(member => {
+    codeWriter.emit('\n');
+    codeWriter.emitCodeBlock(member);
+  });
+
+  return out.toString().replace(/(#\$#(.*?)\|(_autoresolved.*?)#\$#)/g, (match, g1, g2, g3) => {
+    return `${g2} as ${g2}${g3}`
+  })
+}
+

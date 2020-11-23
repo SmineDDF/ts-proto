@@ -423,7 +423,7 @@ function generateEnum(
 
       code = code.add(
         '%L = %L,\n',
-        valueDesc.name,
+        stringEnum,
         `"${stringEnum}"`
       );
     } else {

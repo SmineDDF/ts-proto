@@ -1,6 +1,6 @@
 import { promisify } from 'util';
 import { loadSync } from 'protobufjs';
-import { optionsFromParameter, readToBuffer } from './utils';
+import { optionsFromParameter, readToBuffer, stringifyFile } from './utils';
 import { google } from '../build/pbjs';
 import { generateFile } from './main';
 import { createTypeMap } from './types';
@@ -10,23 +10,25 @@ import Feature = google.protobuf.compiler.CodeGeneratorResponse.Feature;
 
 const getProtoPath = (path = '.', name: string) => {
   const isPathAbsolute = path.startsWith('/');
-  
+
   if (isPathAbsolute) {
     return path + '/' + name;
   }
 
   return process.cwd() + '/' + path + '/' + name;
-}
+};
+
 const getParamsFromString = (params: string): Record<string, string> => params.split(',').reduce((acc, param) => {
   const [key, value] = param.split('=');
   acc[key] = value;
 
   return acc;
-}, {})
+}, {});
+
 const resolveNestedPackage = (packageName: string, parsedFile: object) => {
   const paths = packageName.split('.');
 
-  // @ts-expect-error
+  // @ts-ignore-next-line
   let current = parsedFile?.nested;
 
   paths.forEach(path => {
@@ -35,10 +37,10 @@ const resolveNestedPackage = (packageName: string, parsedFile: object) => {
     }
 
     current = current[path]?.nested;
-  })
+  });
 
   return current;
-}
+};
 
 // this would be the plugin called by the protoc compiler
 async function main() {
@@ -59,7 +61,7 @@ async function main() {
     const spec = generateFile(typeMap, file, request.parameter, parsed);
     return new CodeGeneratorResponse.File({
       name: spec.path,
-      content: spec.toString()
+      content: stringifyFile(spec)
     });
   });
   const response = new CodeGeneratorResponse({ file: files, supportedFeatures: Feature.FEATURE_PROTO3_OPTIONAL });
